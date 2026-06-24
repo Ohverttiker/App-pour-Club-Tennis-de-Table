@@ -1,9 +1,16 @@
 import streamlit as st
-from core.ranking import load_data, get_players, get_matches, display_mmr
+from core.ranking import load_data, get_players, get_matches, display_mmr, get_rank_evolution
 
 data = load_data()
 players = get_players(data)
 matches = get_matches(data)
+
+def _evo_badge(delta: int) -> str:
+    if delta > 0:
+        return f"<span style='color:#2ecc71; font-weight:bold;'>▲ {delta}</span>"
+    elif delta < 0:
+        return f"<span style='color:#e74c3c; font-weight:bold;'>▼ {abs(delta)}</span>"
+    return "<span style='color:#888;'>—</span>"
 
 def show():
     st.markdown("""
@@ -49,13 +56,16 @@ def show():
 
     # Tableau complet
     st.markdown("### 📋 Classement complet")
-    header = st.columns([0.5, 2.5, 1.5, 1, 1, 1.5])
+    evolution = get_rank_evolution(data)
+
+    header = st.columns([0.5, 2.5, 1.5, 1, 1, 1.5, 1])
     header[0].markdown("**#**")
     header[1].markdown("**Joueur**")
     header[2].markdown("**MMR**")
     header[3].markdown("**✅ V**")
     header[4].markdown("**❌ D**")
     header[5].markdown("**% Victoires**")
+    header[6].markdown("**Évol.**")
 
     st.markdown("<hr style='margin:0.3rem 0;'>", unsafe_allow_html=True)
 
@@ -63,13 +73,19 @@ def show():
         total = p["wins"] + p["losses"]
         winrate = f"{round(p['wins'] / total * 100)}%" if total > 0 else "—"
         medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(p["rank"], "")
-        row = st.columns([0.5, 2.5, 1.5, 1, 1, 1.5])
+        delta = evolution.get(p["name"])
+
+        row = st.columns([0.5, 2.5, 1.5, 1, 1, 1.5, 1])
         row[0].write(f"{p['rank']}")
         row[1].write(f"{medal} {p['name']}")
         row[2].write(f"**{display_mmr(p['mmr'])}**")
         row[3].write(str(p["wins"]))
         row[4].write(str(p["losses"]))
         row[5].write(winrate)
+        if delta is not None:
+            row[6].markdown(_evo_badge(delta), unsafe_allow_html=True)
+        else:
+            row[6].write("🆕")  # joueur absent du backup = nouveau
 
     # Derniers matchs
     if matches:

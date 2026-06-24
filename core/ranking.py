@@ -19,6 +19,11 @@ def _backup_path() -> str:
     files = _list_backup_files()
     return files[0] if files else None
 
+def _export_path() -> str:
+    """Retourne le chemin du backup quotidien (players_YYYY-MM-DD.json)."""
+    files = _list_export_files()
+    return files[0] if files else None
+
 def _list_backup_files() -> list[str]:
     """Liste tous les backups datés, du plus récent au plus ancien."""
     import glob
@@ -140,6 +145,7 @@ def add_player(data: dict, name: str, mmr: int = 100) -> dict:
         "rank": _next_id(data),
         "best_rank": _next_id(data),
         "status": "active",
+        "absences":0,
         "history": [{"date": datetime.now().strftime("%Y-%m-%d"), "mmr": mmr}],
     }
     data["players"].append(player)
@@ -223,14 +229,17 @@ def record_match(data: dict, winner_name: str, loser_name: str, sets_w: int, set
 
     loser["mmr"]+=sets_l-sets_w
 
-    # Règle 3 : tous les autres joueurs perdent 1/N
-    total = len([p for p in data["players"] if p.get("status")== "active"])
-    decay = 1 / total
+    # Règle 3 : tous les autres joueurs voient leur compteur d'absence augmenter
+    total = len([p for p in data["players"] if p.get("status") == "active"])
 
     for p in data["players"]:
-        if p["name"] not in (winner_name, loser_name) and p['status']=="active":
-            p["mmr"] -= decay
+        if p["name"] not in (winner_name, loser_name) and p.get("status") == "active":
+            p["mmr"] -= int(p["absences"]/5)*3/total
+            p["absences"]+=1
             si_nouvelle_snapshot(p, match_datetime)
+
+    winner["absences"]=0
+    loser["absences"]=0
 
     # Historique
     winner["history"].append({"date": match_datetime.split(" ")[0], "mmr": winner["mmr"]})
@@ -255,6 +264,36 @@ def record_match(data: dict, winner_name: str, loser_name: str, sets_w: int, set
     update_ranks(data)
     save_data(data)
     return True, "OK"
+
+def get_rank_evolution(data: dict) -> dict:
+    """
+    Compare le classement actuel avec le dernier backup automatique.
+    Retourne un dict {nom: delta} où delta > 0 = montée, < 0 = descente, 0 = stable.
+    """
+    backup = _backup_path()
+    if not backup or not os.path.exists(backup):
+        return {}
+
+    with open(backup, "r", encoding="utf-8") as f:
+        old_data = json.load(f)
+
+    # On lit directement le champ "rank" sauvegardé dans le backup
+    old_ranks = {
+        p["name"]: p["rank"]
+        for p in old_data["players"]
+        if p.get("status") == "active" and "rank" in p
+    }
+
+    evolution = {}
+    for p in data["players"]:
+        if p.get("status") != "active":
+            continue
+        name = p["name"]
+        if name in old_ranks:
+            # old_rank - current_rank : positif = montée (ex : 5→3 = +2)
+            evolution[name] = old_ranks[name] - p["rank"]
+
+    return evolution
 
 
 def _elo_delta(winner_mmr: int, loser_mmr: int, k: int = 32) -> int:
@@ -396,6 +435,7 @@ def _add_player_in_memory(data: dict, name: str, mmr: int = 100, history_date: s
         "rank": _next_id(data),
         "best_rank": _next_id(data),
         "status": "active",
+        "absences":0,
         "history": [{"date": date, "mmr": mmr}],
     }
     data["players"].append(player)
@@ -425,12 +465,15 @@ def _record_match_in_memory(data: dict, winner_name: str, loser_name: str,
     loser["mmr"] += sets_l - sets_w
 
     total = len([p for p in data["players"] if p.get("status") == "active"])
-    decay = 4 / total
 
     for p in data["players"]:
         if p["name"] not in (winner_name, loser_name) and p.get("status") == "active":
-            p["mmr"] -= decay
+            p["mmr"] -= int(p["absences"]/5)*3/total
+            p["absences"]+=1
             si_nouvelle_snapshot(p, match_datetime)
+
+    winner["absences"]=0
+    loser["absences"]=0
 
     match_date = (match_datetime or datetime.now().strftime("%Y-%m-%d %H:%M"))[:10]
     winner["history"].append({"date": match_date, "mmr": winner["mmr"]})

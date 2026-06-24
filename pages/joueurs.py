@@ -8,6 +8,12 @@ start_mmr = int(players[-1]["mmr"])-4
 
 def show():
 
+    # ── Routing interne : page stats ─────────────────────────────────────────
+    if st.session_state.get("selected_player"):
+        from pages.stats_joueur import show as show_stats
+        show_stats(st.session_state["selected_player"])
+        return
+
     st.markdown("## 👥 Gestion des joueurs")
 
     # ── Ajouter ──────────────────────────────────────────────────────────────
@@ -40,13 +46,17 @@ def show():
     if not players:
         st.info("Aucun joueur actif pour l'instant.")
     else:
-        st.caption("**Retirer** archive le joueur (historique conservé) · **Supprimer** efface définitivement")
+        st.caption("**Détails** affiche les stats · **Retirer** archive le joueur · **Supprimer** efface définitivement")
         for p in players:
-            col1, col2, col3, col4 = st.columns([0.5, 2.8, 1.2, 1.2])
+            col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1.0, 1.2, 1.2])
             col1.write(f"**#{p['rank']}**")
             col2.write(f"{p['name']} — {display_mmr(p['mmr'])} pts ({p['wins']}V / {p['losses']}D)")
 
-            if col3.button("🗄️ Retirer", key=f"retire_{p['name']}", use_container_width=True):
+            if col3.button("📊 Détails", key=f"stats_{p['name']}", use_container_width=True):
+                st.session_state["selected_player"] = p["name"]
+                st.rerun()
+
+            if col4.button("🗄️ Retirer", key=f"retire_{p['name']}", use_container_width=True):
                 with st.spinner("Mise à jour..."):
                     ok, msg = retire_player(p["name"])
                 if ok:
@@ -55,7 +65,7 @@ def show():
                 else:
                     st.error(msg)
 
-            if col4.button("🗑️ Supprimer", key=f"del_{p['name']}", use_container_width=True):
+            if col5.button("🗑️ Supprimer", key=f"del_{p['name']}", use_container_width=True):
                 with st.spinner("Suppression..."):
                     ok, msg = remove_player(data, p["name"])
                 if ok:
@@ -82,6 +92,13 @@ def show():
 
         with st.expander(f"**{p['name']}** — retraité le {retired_since} · pic classement : #{p["best_rank"]} · pic MMR : {display_mmr(peak_mmr)} pts"):
             st.write(f"Bilan avant retraite : **{p['wins']}V / {p['losses']}D**")
+
+            col_stats, _ = st.columns([1, 2])
+            with col_stats:
+                if st.button("📊 Voir ses stats", key=f"stats_retired_{p['name']}", use_container_width=True):
+                    st.session_state["selected_player"] = p["name"]
+                    st.rerun()
+
             st.markdown("**Réactiver ce joueur**")
 
             col1, col2 = st.columns([1.5, 1])
